@@ -1,0 +1,226 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "E-Mail Archiv Connector",
+    "description": "Custom Connector für den Zugriff auf das externe E-Mail-Archivsystem. Ermöglicht die Suche nach archivierten Buchungsbestätigungs-E-Mails und deren Download.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "DynPro Support"
+    }
+  },
+  "host": "archive.auftraggeber.de",
+  "basePath": "/api/v1",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "securityDefinitions": {
+    "api_key": {
+      "type": "apiKey",
+      "in": "header",
+      "name": "X-API-Key",
+      "description": "API-Key für die Authentifizierung am Archivsystem"
+    }
+  },
+  "security": [
+    {
+      "api_key": []
+    }
+  ],
+  "paths": {
+    "/emails/search": {
+      "post": {
+        "operationId": "SearchEmails",
+        "summary": "E-Mails im Archiv suchen",
+        "description": "Sucht archivierte E-Mails anhand der Reise-/Auftragsnummer",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": ["query"],
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "Reise- oder Auftragsnummer",
+                  "x-ms-summary": "Referenznummer"
+                },
+                "offset": {
+                  "type": "integer",
+                  "description": "Offset für Paginierung (0-basiert)",
+                  "default": 0,
+                  "x-ms-summary": "Offset"
+                },
+                "limit": {
+                  "type": "integer",
+                  "description": "Maximale Anzahl der Ergebnisse",
+                  "default": 25,
+                  "x-ms-summary": "Limit"
+                },
+                "sortBy": {
+                  "type": "string",
+                  "description": "Sortierfeld",
+                  "enum": ["date", "subject", "from", "direction"],
+                  "default": "date",
+                  "x-ms-summary": "Sortierfeld"
+                },
+                "sortDirection": {
+                  "type": "string",
+                  "description": "Sortierrichtung",
+                  "enum": ["asc", "desc"],
+                  "default": "desc",
+                  "x-ms-summary": "Sortierrichtung"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Suchergebnisse",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "TotalCount": {
+                  "type": "integer",
+                  "description": "Gesamtanzahl der Treffer"
+                },
+                "Items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/ArchiveEmail"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht autorisiert"
+          },
+          "500": {
+            "description": "Serverfehler"
+          }
+        }
+      }
+    },
+    "/emails/{emailId}/download": {
+      "get": {
+        "operationId": "DownloadEmail",
+        "summary": "E-Mail herunterladen",
+        "description": "Lädt eine archivierte E-Mail im gewünschten Format herunter (inkl. Anhänge)",
+        "parameters": [
+          {
+            "name": "emailId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "ID der E-Mail im Archiv",
+            "x-ms-summary": "E-Mail ID"
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": ["eml", "msg"],
+            "default": "eml",
+            "description": "Gewünschtes Dateiformat",
+            "x-ms-summary": "Format"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "E-Mail-Datei als Base64",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "FileContent": {
+                  "type": "string",
+                  "format": "byte",
+                  "description": "Base64-kodierter Dateiinhalt"
+                },
+                "FileName": {
+                  "type": "string",
+                  "description": "Dateiname"
+                },
+                "MimeType": {
+                  "type": "string",
+                  "description": "MIME-Typ der Datei"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "E-Mail nicht gefunden"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "ArchiveEmail": {
+      "type": "object",
+      "properties": {
+        "Id": {
+          "type": "string",
+          "description": "Eindeutige ID im Archiv"
+        },
+        "Subject": {
+          "type": "string",
+          "description": "Betreff"
+        },
+        "SenderEmail": {
+          "type": "string",
+          "description": "Absender E-Mail-Adresse"
+        },
+        "SenderName": {
+          "type": "string",
+          "description": "Absender Anzeigename"
+        },
+        "Recipients": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Empfänger-Adressen"
+        },
+        "ReceivedDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Empfangsdatum"
+        },
+        "AttachmentCount": {
+          "type": "integer",
+          "description": "Anzahl Anhänge"
+        },
+        "AttachmentNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Namen der Anhänge"
+        },
+        "SizeBytes": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Größe in Bytes"
+        }
+      }
+    }
+  },
+  "x-ms-connector-metadata": [
+    {
+      "propertyName": "Website",
+      "propertyValue": "https://auftraggeber.de"
+    },
+    {
+      "propertyName": "Privacy policy",
+      "propertyValue": "https://auftraggeber.de/privacy"
+    },
+    {
+      "propertyName": "Categories",
+      "propertyValue": "Communication;Business Management"
+    }
+  ]
+}

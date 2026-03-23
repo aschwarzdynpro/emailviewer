@@ -1,0 +1,22 @@
+{
+  "properties": {
+    "connectionParameters": {
+      "api_key": {
+        "type": "securestring",
+        "uiDefinition": {
+          "displayName": "API-Key",
+          "description": "API-Key für das E-Mail-Archivsystem (wird vom Auftraggeber bereitgestellt)",
+          "tooltip": "API-Key eingeben",
+          "constraints": {
+            "required": "true",
+            "tabIndex": 1
+          }
+        }
+      }
+    },
+    "iconBrandColor": "#0078d4",
+    "capabilities": [],
+    "publisher": "DynPro",
+    "stackOwner": "DynPro"
+  }
+}

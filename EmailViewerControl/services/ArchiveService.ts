@@ -8,7 +8,11 @@ import {
 
 /**
  * Service for communicating with the external email archive
- * through Dataverse Custom Actions (which proxy to Azure Functions).
+ * through Dataverse Custom Actions.
+ * The Custom Actions trigger Power Automate Cloud Flows which use
+ * a Custom Connector to call the external archive API directly.
+ *
+ * Architecture: PCF → Custom Action → Power Automate → Custom Connector → Archive API
  */
 export class ArchiveService {
   private webApi: ComponentFramework.WebApi;
@@ -21,8 +25,8 @@ export class ArchiveService {
 
   /**
    * Search for archived emails by reference number via Dataverse Custom Action.
-   * The Custom Action proxies the request to an Azure Function HTTP Trigger,
-   * which in turn queries the external archive system (API/IMAP).
+   * The Custom Action triggers a Power Automate flow that uses the
+   * Custom Connector to query the external archive system.
    */
   async searchEmails(
     request: ArchiveSearchRequest

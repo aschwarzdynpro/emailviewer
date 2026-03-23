@@ -3,152 +3,66 @@
 ## Übersicht
 
 ```
-┌─────────┐    ┌───────────────────┐    ┌────────────────┐    ┌──────────────┐
-│ PCF     │───▶│ Custom Action     │───▶│ Azure Function │───▶│ Externes     │
-│ Control │◀───│ (Dataverse)       │◀───│ HTTP Trigger   │◀───│ Archiv       │
-└─────────┘    └───────────────────┘    └────────────────┘    └──────────────┘
-                                              │
-                                              ▼
-                                        ┌────────────┐
-                                        │ Key Vault  │
-                                        │ (Secrets)  │
-                                        └────────────┘
+┌─────────┐    ┌──────────────────┐    ┌──────────────────┐    ┌────────────────┐    ┌──────────────┐
+│ PCF     │───▶│ Custom Action    │───▶│ Power Automate   │───▶│ Custom         │───▶│ Externes     │
+│ Control │◀───│ (Dataverse)      │◀───│ Cloud Flow       │◀───│ Connector      │◀───│ Archiv       │
+└─────────┘    └──────────────────┘    └──────────────────┘    └────────────────┘    └──────────────┘
 ```
+
+**Keine Azure Function nötig** – der Custom Connector kommuniziert direkt mit der Archiv-API.
 
 ---
 
-## 1. Azure-Ressourcen einrichten
+## 1. Custom Connector erstellen
 
-### 1.1 Resource Group
+Der Custom Connector kapselt die Archiv-API und verwaltet Authentifizierung (API-Key).
 
-```bash
-az group create \
-  --name rg-emailarchive \
-  --location westeurope
-```
+### 1.1 Per Power Platform UI
 
-### 1.2 App Registration (Azure AD)
+1. **Power Apps** → Verbindungen → Benutzerdefinierte Connectors → **+ Neuer benutzerdefinierter Connector**
+2. **„OpenAPI-Datei importieren"** auswählen
+3. Datei `custom-connector/apiDefinition.swagger.json` hochladen
+4. **Allgemein**:
+   - Name: `E-Mail Archiv`
+   - Host: `archive.auftraggeber.de` (tatsächliche URL des Archivsystems)
+   - Basis-URL: `/api/v1`
+5. **Sicherheit**:
+   - Authentifizierungstyp: **API-Key**
+   - Parameter-Label: `API-Key`
+   - Parameter-Name: `X-API-Key`
+   - Parameter-Speicherort: `Header`
+6. **Definition**: Die Operationen `SearchEmails` und `DownloadEmail` werden automatisch aus der Swagger-Datei geladen
+7. **Testen**: Verbindung erstellen und `SearchEmails` mit einer Test-Referenznummer ausprobieren
 
-Die App Registration authentifiziert die Kommunikation zwischen Dataverse und Azure Function.
-
-```bash
-# App Registration erstellen
-az ad app create \
-  --display-name "EmailArchive-D365-Connector" \
-  --sign-in-audience AzureADMyOrg
-
-# App ID notieren (wird in Dataverse benötigt)
-APP_ID=$(az ad app list --display-name "EmailArchive-D365-Connector" --query "[0].appId" -o tsv)
-
-# Client Secret erstellen
-az ad app credential reset --id $APP_ID --years 2
-# → Client Secret notieren!
-
-# Service Principal erstellen
-az ad sp create --id $APP_ID
-```
-
-**Benötigte API-Berechtigungen:**
-- Keine Graph-API-Berechtigungen nötig
-- Die Function wird über Function Key + Azure AD abgesichert
-
-### 1.3 Key Vault
+### 1.2 Per CLI (paconn)
 
 ```bash
-# Key Vault erstellen
-az keyvault create \
-  --name kv-emailarchive \
-  --resource-group rg-emailarchive \
-  --location westeurope
+# Power Platform Connectors CLI installieren
+pip install paconn
 
-# Secrets anlegen
-az keyvault secret set \
-  --vault-name kv-emailarchive \
-  --name "archive-api-key" \
-  --value "<API-KEY-VOM-AUFTRAGGEBER>"
+# Anmelden
+paconn login
 
-# Optional: IMAP-Credentials
-az keyvault secret set \
-  --vault-name kv-emailarchive \
-  --name "archive-imap-password" \
-  --value "<IMAP-PASSWORT>"
+# Connector erstellen
+paconn create \
+  --api-def custom-connector/apiDefinition.swagger.json \
+  --api-prop custom-connector/apiProperties.json \
+  --environment <ENVIRONMENT_ID>
 ```
 
-### 1.4 Azure Function App
+### 1.3 Authentifizierungs-Alternativen
 
-```bash
-# Storage Account für Function
-az storage account create \
-  --name stemailarchivefunc \
-  --resource-group rg-emailarchive \
-  --location westeurope \
-  --sku Standard_LRS
+Je nach Archiv-API kann der Custom Connector auch mit anderen Auth-Methoden konfiguriert werden:
 
-# Function App erstellen (.NET 8 Isolated)
-az functionapp create \
-  --name func-emailarchive \
-  --resource-group rg-emailarchive \
-  --storage-account stemailarchivefunc \
-  --consumption-plan-location westeurope \
-  --runtime dotnet-isolated \
-  --runtime-version 8 \
-  --functions-version 4 \
-  --os-type Linux
-
-# Managed Identity aktivieren
-az functionapp identity assign \
-  --name func-emailarchive \
-  --resource-group rg-emailarchive
-
-# Managed Identity ID abrufen
-IDENTITY_ID=$(az functionapp identity show \
-  --name func-emailarchive \
-  --resource-group rg-emailarchive \
-  --query principalId -o tsv)
-
-# Key Vault-Zugriff für Managed Identity
-az keyvault set-policy \
-  --name kv-emailarchive \
-  --object-id $IDENTITY_ID \
-  --secret-permissions get list
-
-# App Settings konfigurieren
-az functionapp config appsettings set \
-  --name func-emailarchive \
-  --resource-group rg-emailarchive \
-  --settings \
-    "ARCHIVE_API_URL=https://archive.auftraggeber.de/api/v1" \
-    "KEY_VAULT_URL=https://kv-emailarchive.vault.azure.net/" \
-    "ORGANIZER_DOMAINS=@veranstalter1.de,@veranstalter2.com"
-```
-
-### 1.5 Log Analytics (Monitoring)
-
-```bash
-# Log Analytics Workspace
-az monitor log-analytics workspace create \
-  --resource-group rg-emailarchive \
-  --workspace-name law-emailarchive \
-  --location westeurope
-
-# Application Insights verbinden
-az monitor app-insights component create \
-  --app ai-emailarchive \
-  --location westeurope \
-  --resource-group rg-emailarchive \
-  --workspace law-emailarchive
-```
-
-### 1.6 Azure Function deployen
-
-```bash
-cd azure-function
-func azure functionapp publish func-emailarchive
-```
+| Methode | Wann verwenden |
+|---|---|
+| **API-Key** (Standard) | Archiv stellt einen statischen API-Key bereit |
+| **OAuth 2.0** | Archiv unterstützt OAuth (z.B. Azure AD, eigener IdP) |
+| **Basic Auth** | Archiv verwendet Benutzername/Passwort (z.B. IMAP) |
 
 ---
 
-## 2. Dataverse Custom Actions einrichten
+## 2. Dataverse Custom Actions erstellen
 
 ### 2.1 Custom Action: `dynpro_GetArchivedEmails` (Suche)
 
@@ -210,107 +124,75 @@ In der **Power Platform Solution** erstellen:
 | `Success` | Boolean |
 | `ErrorMessage` | String |
 
-### 2.3 Custom Action mit Azure Function verbinden
+---
 
-Die Custom Actions rufen die Azure Function per HTTP auf. Dafür gibt es zwei Wege:
+## 3. Power Automate Cloud Flows erstellen
 
-#### Option A: Plugin (empfohlen)
+Die Flows verbinden die Custom Actions mit dem Custom Connector.
+Details siehe [power-automate-flows.md](./power-automate-flows.md).
 
-Ein Dataverse Plugin registrieren, das auf der Custom Action ausgelöst wird und die Azure Function aufruft:
+### 3.1 Flow: Suche
 
-```csharp
-// Plugin: GetArchivedEmailsPlugin.cs
-public class GetArchivedEmailsPlugin : IPlugin
-{
-    public void Execute(IServiceProvider serviceProvider)
-    {
-        var context = (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
-        var tracingService = (ITracingService)serviceProvider.GetService(typeof(ITracingService));
-
-        // Eingabeparameter lesen
-        var referenceNumber = (string)context.InputParameters["ReferenceNumber"];
-        var page = (int)context.InputParameters["Page"];
-        var pageSize = (int)context.InputParameters["PageSize"];
-        var sortBy = context.InputParameters.Contains("SortBy")
-            ? (string)context.InputParameters["SortBy"] : "date";
-        var sortDirection = context.InputParameters.Contains("SortDirection")
-            ? (string)context.InputParameters["SortDirection"] : "desc";
-
-        // Azure Function aufrufen
-        var functionUrl = "https://func-emailarchive.azurewebsites.net/api/emails/search";
-        var functionKey = GetFunctionKey(); // Aus Secure Configuration
-
-        using var client = new HttpClient();
-        client.DefaultRequestHeaders.Add("x-functions-key", functionKey);
-
-        var payload = new
-        {
-            ReferenceNumber = referenceNumber,
-            Page = page,
-            PageSize = pageSize,
-            SortBy = sortBy,
-            SortDirection = sortDirection
-        };
-
-        var json = JsonSerializer.Serialize(payload);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        var response = client.PostAsync(functionUrl, content).GetAwaiter().GetResult();
-        var responseBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-
-        var result = JsonSerializer.Deserialize<SearchResponse>(responseBody);
-
-        // Ausgabeparameter setzen
-        context.OutputParameters["Emails"] = JsonSerializer.Serialize(result.Emails);
-        context.OutputParameters["TotalCount"] = result.TotalCount;
-        context.OutputParameters["Success"] = result.Success;
-        context.OutputParameters["ErrorMessage"] = result.ErrorMessage ?? "";
-    }
-}
+```
+Trigger: "When an action is performed" (dynpro_GetArchivedEmails)
+    │
+    ▼
+Compose: Offset berechnen ((Page - 1) * PageSize)
+    │
+    ▼
+Custom Connector: SearchEmails (query, offset, limit, sortBy, sortDirection)
+    │
+    ▼
+Select: Ergebnisse mappen (Direction bestimmen: Kunde/Veranstalter)
+    │
+    ▼
+Respond: Emails (JSON), TotalCount, Success=true
 ```
 
-Plugin-Registrierung:
-1. **Plugin Registration Tool** öffnen
-2. Assembly registrieren
-3. Step registrieren:
-   - **Message**: `dynpro_GetArchivedEmails`
-   - **Stage**: PostOperation
-   - **Mode**: Synchronous
+### 3.2 Flow: Download
 
-#### Option B: Power Automate Cloud Flow
+```
+Trigger: "When an action is performed" (dynpro_GetArchivedEmails_Download)
+    │
+    ▼
+Custom Connector: DownloadEmail (emailId, format)
+    │
+    ▼
+Respond: FileContent (Base64), FileName, MimeType, Success=true
+```
 
-Falls kein Plugin gewünscht – einen Cloud Flow als Alternative:
+### 3.3 Connection Reference einrichten
 
-1. Trigger: "When an action is performed" → `dynpro_GetArchivedEmails`
-2. HTTP Action → Azure Function URL aufrufen
-3. Response Action → Ausgabeparameter zurückgeben
+Damit die Verbindung pro Umgebung konfigurierbar ist:
 
-⚠️ **Nachteil**: Höhere Latenz (~2-5s vs. ~0.5-1s beim Plugin)
+1. In der Solution eine **Connection Reference** hinzufügen
+2. Typ: `E-Mail Archiv` (Custom Connector)
+3. In den Flows diese Connection Reference verwenden (nicht direkt die Verbindung)
+4. Beim Import der Solution in andere Umgebungen wird die Verbindung abgefragt
 
 ---
 
-## 3. PCF Control im Formular einbinden
+## 4. PCF Control im Formular einbinden
 
-### 3.1 Control zur Solution hinzufügen
+### 4.1 Control zur Solution hinzufügen
 
 ```bash
-cd EmailViewerControl
 npm run build
 
-# Solution erstellen
+# Solution erstellen (falls noch nicht vorhanden)
 pac solution init \
   --publisher-name DynPro \
   --publisher-prefix dynpro \
-  --outputDirectory ../EmailViewerSolution
+  --outputDirectory ./EmailViewerSolution
 
-cd ../EmailViewerSolution
+cd EmailViewerSolution
 pac solution add-reference --path ../
 
 # Build
 dotnet build
 ```
 
-### 3.2 Im Formular konfigurieren
+### 4.2 Im Formular konfigurieren
 
 1. **Formular-Editor** öffnen (Reise/Auftrag)
 2. Feld für die Reise-/Auftragsnummer auswählen (z.B. `dynpro_reisenummer`)
@@ -323,35 +205,55 @@ dotnet build
 
 ---
 
-## 4. Sicherheit
+## 5. Sicherheit
 
 | Schicht | Maßnahme |
 |---|---|
 | **PCF → Custom Action** | Dataverse Security Roles (nur autorisierte Benutzer) |
-| **Custom Action → Azure Function** | Function Key (im Plugin Secure Config) |
-| **Azure Function → Key Vault** | Managed Identity (kein Secret im Code) |
-| **Azure Function → Archiv** | API-Key aus Key Vault / OAuth2 |
-| **Netzwerk** | Optional: VNET Integration + Private Endpoints |
+| **Custom Action → Flow** | Flow wird automatisch im Kontext des auslösenden Benutzers ausgeführt |
+| **Flow → Custom Connector** | API-Key / OAuth im Connector hinterlegt |
+| **Custom Connector → Archiv** | HTTPS-Verschlüsselung, API-Key im Header |
+
+### DLP-Policy beachten
+
+Den Custom Connector in die richtige **Data Loss Prevention (DLP) Policy-Gruppe** einordnen:
+- Empfehlung: **Business**-Gruppe (zusammen mit Dataverse, Office 365)
+- Nicht in die **Non-Business**-Gruppe, da sonst die Flows blockiert werden
 
 ---
 
-## 5. Monitoring
+## 6. Monitoring
 
-### Application Insights Queries (KQL)
+### Flow Run History
 
-```kql
-// Fehlerhafte Archiv-Anfragen der letzten 24h
-requests
-| where timestamp > ago(24h)
-| where name in ("GetArchivedEmails", "DownloadArchivedEmail")
-| where success == false
-| project timestamp, name, resultCode, duration, customDimensions
-| order by timestamp desc
+1. **Power Automate** → Meine Flows → Flow auswählen → Ausführungsverlauf
+2. Fehlgeschlagene Ausführungen analysieren
+3. Optional: Alerts einrichten bei wiederholten Fehlern
 
-// Durchschnittliche Antwortzeit
-requests
-| where timestamp > ago(7d)
-| where name == "GetArchivedEmails"
-| summarize avg(duration), percentile(duration, 95), count() by bin(timestamp, 1h)
-| render timechart
+### Optional: Application Insights
+
+Falls zusätzliches Monitoring gewünscht:
+
+```bash
+az monitor app-insights component create \
+  --app ai-emailarchive \
+  --location westeurope \
+  --resource-group rg-emailarchive
 ```
+
+Custom Connector-Aufrufe können via Power Platform Admin Center → Analytics überwacht werden.
+
+---
+
+## Vergleich: Custom Connector vs. Azure Function
+
+| Kriterium | Custom Connector | Azure Function |
+|---|---|---|
+| **Azure-Ressourcen** | Keine | Function App, Storage, Key Vault, Managed Identity |
+| **Deployment** | Solution-Import | CI/CD Pipeline + Solution-Import |
+| **Authentifizierung** | Im Connector konfiguriert | Key Vault + Managed Identity |
+| **Latenz** | ~2-5s (Flow-Overhead) | ~0.5-1s (Plugin direkt) |
+| **Wartung** | Low-Code (Power Automate) | Pro-Code (C# / .NET) |
+| **Flexibilität** | Begrenzt auf API-Mapping | Volle Kontrolle (Caching, Transformation) |
+| **Kosten** | Power Automate Lizenz (in D365 enthalten) | Azure Consumption-Kosten |
+| **Empfehlung** | Standard-Szenario | Hohe Performance / komplexe Logik nötig |
