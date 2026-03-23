@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest>
+  <control namespace="DynPro" constructor="EmailViewerControl" version="1.0.0" display-name-key="EmailViewer_Display_Key" description-key="EmailViewer_Desc_Key" control-type="virtual">
+
+    <external-service-usage enabled="true">
+      <!-- Azure Function endpoint for archive access -->
+    </external-service-usage>
+
+    <!-- Input property: Reference number (Reise-/Auftragsnummer) to search emails -->
+    <property name="referenceNumber" display-name-key="ReferenceNumber_Display_Key" description-key="ReferenceNumber_Desc_Key" of-type="SingleLine.Text" usage="bound" required="true" />
+
+    <!-- Input property: Entity logical name for context -->
+    <property name="entityLogicalName" display-name-key="EntityLogicalName_Display_Key" description-key="EntityLogicalName_Desc_Key" of-type="SingleLine.Text" usage="input" required="false" />
+
+    <!-- Input property: Custom Action name to call -->
+    <property name="customActionName" display-name-key="CustomActionName_Display_Key" description-key="CustomActionName_Desc_Key" of-type="SingleLine.Text" usage="input" required="false" default-value="dynpro_GetArchivedEmails" />
+
+    <!-- Input property: Page size for pagination -->
+    <property name="pageSize" display-name-key="PageSize_Display_Key" description-key="PageSize_Desc_Key" of-type="Whole.None" usage="input" required="false" default-value="25" />
+
+    <resources>
+      <code path="index.ts" order="1" />
+      <css path="css/EmailViewer.css" order="1" />
+      <resx path="strings/EmailViewer.1031.resx" version="1.0.0" />
+      <resx path="strings/EmailViewer.1033.resx" version="1.0.0" />
+      <platform-library name="React" version="18.2.0" />
+      <platform-library name="Fluent" version="9.46.2" />
+    </resources>
+  </control>
+</manifest>

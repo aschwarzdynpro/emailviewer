@@ -1,0 +1,30 @@
+{
+  "name": "email-viewer-pcf",
+  "version": "1.0.0",
+  "description": "PCF Control for viewing booking confirmation emails from an external archive system",
+  "scripts": {
+    "build": "pcf-scripts build",
+    "clean": "pcf-scripts clean",
+    "lint": "eslint EmailViewerControl/**/*.{ts,tsx}",
+    "lint:fix": "eslint EmailViewerControl/**/*.{ts,tsx} --fix",
+    "rebuild": "pcf-scripts rebuild",
+    "start": "pcf-scripts start",
+    "start:watch": "pcf-scripts start watch"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@fluentui/react": "^8.120.0",
+    "@fluentui/react-icons": "^2.0.245"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.50.0",
+    "pcf-scripts": "^1",
+    "pcf-start": "^1",
+    "typescript": "^5.2.0"
+  }
+}

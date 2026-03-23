@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+generated/
+bundle/
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PCF
+obj/
+bin/
+
+# Environment
+.env
+.env.local
